@@ -13,6 +13,7 @@ from ..calling_service import CallingServiceError, place_call
 from ..database import SessionLocal
 from ..models import Campaign, Screening
 from .scoring import score_and_recommend
+from .jd_matching import match_job_description
 
 logger = logging.getLogger("globalvox.campaign_runner")
 
@@ -74,12 +75,20 @@ def process_one_screening(screening_id: int):
 
             if result.outcome == "success":
                 score, recommendation, summary = score_and_recommend(result.data, campaign)
+                jd_pct, jd_matched, jd_missing = match_job_description(
+                    campaign.job_description, result.data.get("skills")
+                )
+                data = dict(result.data)
+                if jd_pct is not None:
+                    data["jd_match"] = {"pct": jd_pct, "matched": jd_matched, "missing": jd_missing}
+
                 screening.call_status = "completed"
                 screening.outcome_detail = "success"
                 screening.recommendation = recommendation
                 screening.ai_score = score
                 screening.summary = summary
-                screening.extracted_data = result.data
+                screening.extracted_data = data
+                screening.jd_match_pct = jd_pct
                 screening.call_duration_seconds = result.duration_seconds
                 screening.error_message = None
                 db.commit()

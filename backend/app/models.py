@@ -73,6 +73,17 @@ class Screening(Base):
     error_message: Mapped[str] = mapped_column(Text, nullable=True)
     call_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=True)
 
+    # % overlap between the campaign's job_description and the candidate's
+    # captured skills; null when the campaign has no JD text with recognizable
+    # skill keywords (matching wasn't applicable, not "0% match")
+    jd_match_pct: Mapped[int] = mapped_column(Integer, nullable=True)
+
+    # a recruiter can leave a note and/or override the AI's recommendation;
+    # the override always wins over `recommendation` wherever a bucket is shown
+    recruiter_note: Mapped[str] = mapped_column(Text, nullable=True)
+    recruiter_override: Mapped[str] = mapped_column(String(20), nullable=True, index=True)
+    reviewed_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
     last_attempt_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
 

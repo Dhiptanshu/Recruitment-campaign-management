@@ -34,6 +34,16 @@ class CampaignCreate(BaseModel):
     candidate_ids: Optional[list[int]] = None  # if omitted, all candidates are added
 
 
+class CampaignUpdate(BaseModel):
+    name: Optional[str] = None
+    position: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    experience_min: Optional[int] = None
+    experience_max: Optional[int] = None
+    job_description: Optional[str] = None
+
+
 class CampaignOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -74,7 +84,10 @@ class ScreeningListItemOut(BaseModel):
     call_status: str
     outcome_detail: Optional[str] = None
     recommendation: Optional[str] = None
+    recruiter_override: Optional[str] = None
+    effective_recommendation: Optional[str] = None
     ai_score: Optional[int] = None
+    jd_match_pct: Optional[int] = None
     attempt_count: int
     last_attempt_at: Optional[datetime.datetime] = None
 
@@ -96,6 +109,31 @@ class ScreeningDetailOut(BaseModel):
     max_attempts: int
     last_attempt_at: Optional[datetime.datetime] = None
     created_at: datetime.datetime
+
+    jd_match_pct: Optional[int] = None
+    recruiter_note: Optional[str] = None
+    recruiter_override: Optional[str] = None
+    effective_recommendation: Optional[str] = None
+    reviewed_at: Optional[datetime.datetime] = None
+    interview_suggestion: Optional[dict] = None
+
+
+class RecruiterFeedbackIn(BaseModel):
+    note: Optional[str] = None
+    override: Optional[str] = None  # shortlisted | manual_review | rejected
+    clear_override: bool = False
+
+
+class LeaderboardItemOut(BaseModel):
+    rank: int
+    screening_id: int
+    candidate_name: str
+    candidate_company: Optional[str] = None
+    campaign_id: int
+    campaign_name: str
+    ai_score: Optional[int] = None
+    jd_match_pct: Optional[int] = None
+    recommendation: Optional[str] = None
 
 
 class PageOut(BaseModel):

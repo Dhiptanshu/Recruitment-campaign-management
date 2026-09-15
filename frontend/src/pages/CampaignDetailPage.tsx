@@ -27,6 +27,18 @@ export function CampaignDetailPage() {
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    position: "",
+    department: "",
+    location: "",
+    experience_min: 0,
+    experience_max: 8,
+    job_description: "",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const loadCampaign = () => api.getCampaign(campaignId).then(setCampaign).catch((e) => setError(e.message));
   const loadScreenings = () => {
     const f = FILTERS.find((f) => f.key === activeFilter);
@@ -90,6 +102,39 @@ export function CampaignDetailPage() {
     }
   };
 
+  const openEdit = () => {
+    if (!campaign) return;
+    setEditForm({
+      name: campaign.name,
+      position: campaign.position,
+      department: campaign.department ?? "",
+      location: campaign.location ?? "",
+      experience_min: campaign.experience_min,
+      experience_max: campaign.experience_max,
+      job_description: campaign.job_description ?? "",
+    });
+    setShowEditForm(true);
+  };
+
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editForm.experience_min > editForm.experience_max) {
+      setError("Minimum experience cannot exceed maximum");
+      return;
+    }
+    setSavingEdit(true);
+    setError(null);
+    try {
+      await api.updateCampaign(campaignId, editForm);
+      await loadCampaign();
+      setShowEditForm(false);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const onImportFile = async (file: File) => {
     setBusy(true);
     setError(null);
@@ -123,7 +168,14 @@ export function CampaignDetailPage() {
               {campaign.experience_min}-{campaign.experience_max} yrs experience
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={openEdit}
+              disabled={busy}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Edit
+            </button>
             {campaign.total_candidates === 0 && (
               <button
                 onClick={attachAll}
@@ -134,11 +186,11 @@ export function CampaignDetailPage() {
               </button>
             )}
             <label className="cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              Import CSV
+              Import CSV/XLSX
               <input
                 ref={fileRef}
                 type="file"
-                accept=".csv"
+                accept=".csv,.xlsx,.xlsm"
                 className="hidden"
                 disabled={busy}
                 onChange={(e) => e.target.files?.[0] && onImportFile(e.target.files[0])}
@@ -162,14 +214,106 @@ export function CampaignDetailPage() {
               </button>
             )}
             <a
-              href={api.exportCampaignUrl(campaignId)}
+              href={api.exportCampaignUrl(campaignId, "csv")}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               Export CSV
             </a>
+            <a
+              href={api.exportCampaignUrl(campaignId, "xlsx")}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Export XLSX
+            </a>
           </div>
         </div>
       </div>
+
+      {showEditForm && (
+        <form onSubmit={saveEdit} className="grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-white p-5 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="text-xs font-medium text-slate-500">Campaign Name *</label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              value={editForm.name}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500">Position *</label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              value={editForm.position}
+              onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500">Department</label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              value={editForm.department}
+              onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500">Location</label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              value={editForm.location}
+              onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+            />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-xs font-medium text-slate-500">Min Experience (yrs)</label>
+              <input
+                type="number"
+                min={0}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                value={editForm.experience_min}
+                onChange={(e) => setEditForm({ ...editForm, experience_min: Number(e.target.value) })}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs font-medium text-slate-500">Max Experience (yrs)</label>
+              <input
+                type="number"
+                min={0}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                value={editForm.experience_max}
+                onChange={(e) => setEditForm({ ...editForm, experience_max: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-xs font-medium text-slate-500">Job Description</label>
+            <textarea
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              rows={3}
+              value={editForm.job_description}
+              onChange={(e) => setEditForm({ ...editForm, job_description: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              Changing this only affects JD-match scoring for candidates called after this save — it won't retroactively rescore anyone already called.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <button
+              disabled={savingEdit}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {savingEdit ? "Saving…" : "Save Changes"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowEditForm(false)}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
 
       {error && <div className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
       {summary && (
@@ -222,6 +366,7 @@ export function CampaignDetailPage() {
               <th className="px-4 py-2">Phone</th>
               <th className="px-4 py-2">Status</th>
               <th className="px-4 py-2">AI Score</th>
+              <th className="px-4 py-2">JD Match</th>
               <th className="px-4 py-2">Attempts</th>
               <th className="px-4 py-2" />
             </tr>
@@ -232,9 +377,17 @@ export function CampaignDetailPage() {
                 <td className="px-4 py-2 font-medium text-slate-800">{row.candidate_name}</td>
                 <td className="px-4 py-2 text-slate-500">{row.candidate_phone}</td>
                 <td className="px-4 py-2">
-                  <StatusBadge callStatus={row.call_status} recommendation={row.recommendation} />
+                  <div className="flex items-center gap-1.5">
+                    <StatusBadge callStatus={row.call_status} recommendation={row.effective_recommendation} />
+                    {row.recruiter_override && (
+                      <span title="Recruiter override" className="text-xs text-slate-400">
+                        ✎
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-2 text-slate-700">{row.ai_score ?? "—"}</td>
+                <td className="px-4 py-2 text-slate-700">{row.jd_match_pct != null ? `${row.jd_match_pct}%` : "—"}</td>
                 <td className="px-4 py-2 text-slate-500">{row.attempt_count}</td>
                 <td className="px-4 py-2 text-right">
                   <Link to={`/screenings/${row.id}`} className="text-slate-500 hover:text-slate-900">
@@ -245,7 +398,7 @@ export function CampaignDetailPage() {
             ))}
             {screenings && screenings.items.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
                   No candidates match this view yet.
                 </td>
               </tr>

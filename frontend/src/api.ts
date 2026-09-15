@@ -1,4 +1,4 @@
-const BASE_URL = "http://127.0.0.1:8000";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -73,9 +73,17 @@ export interface ScreeningListItem {
   call_status: "not_contacted" | "in_progress" | "completed" | "failed";
   outcome_detail: string | null;
   recommendation: "shortlisted" | "manual_review" | "rejected" | null;
+  recruiter_override: "shortlisted" | "manual_review" | "rejected" | null;
+  effective_recommendation: "shortlisted" | "manual_review" | "rejected" | null;
   ai_score: number | null;
+  jd_match_pct: number | null;
   attempt_count: number;
   last_attempt_at: string | null;
+}
+
+export interface InterviewSuggestion {
+  suggested_within_days: number;
+  reason: string;
 }
 
 export interface ScreeningDetail {
@@ -95,6 +103,24 @@ export interface ScreeningDetail {
   max_attempts: number;
   last_attempt_at: string | null;
   created_at: string;
+  jd_match_pct: number | null;
+  recruiter_note: string | null;
+  recruiter_override: "shortlisted" | "manual_review" | "rejected" | null;
+  effective_recommendation: "shortlisted" | "manual_review" | "rejected" | null;
+  reviewed_at: string | null;
+  interview_suggestion: InterviewSuggestion | null;
+}
+
+export interface LeaderboardItem {
+  rank: number;
+  screening_id: number;
+  candidate_name: string;
+  candidate_company: string | null;
+  campaign_id: number;
+  campaign_name: string;
+  ai_score: number | null;
+  jd_match_pct: number | null;
+  recommendation: "shortlisted" | "manual_review" | "rejected" | null;
 }
 
 export interface Page<T> {
@@ -133,6 +159,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  updateCampaign: (
+    id: number,
+    payload: Partial<{
+      name: string;
+      position: string;
+      department: string;
+      location: string;
+      experience_min: number;
+      experience_max: number;
+      job_description: string;
+    }>
+  ) =>
+    request<Campaign>(`/api/campaigns/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   attachAllCandidates: (campaignId: number) =>
     request<{ added: number }>(`/api/campaigns/${campaignId}/candidates/attach_all`, { method: "POST" }),
   importCandidatesIntoCampaign: (campaignId: number, file: File) => {
@@ -160,8 +202,25 @@ export const api = {
     qs.set("page_size", String(params.page_size ?? 25));
     return request<Page<ScreeningListItem>>(`/api/campaigns/${campaignId}/screenings?${qs}`);
   },
-  exportCampaignUrl: (campaignId: number) => `${BASE_URL}/api/campaigns/${campaignId}/export`,
+  exportCampaignUrl: (campaignId: number, format: "csv" | "xlsx" = "csv") =>
+    `${BASE_URL}/api/campaigns/${campaignId}/export?format=${format}`,
 
   getScreening: (id: number) => request<ScreeningDetail>(`/api/screenings/${id}`),
   retryScreening: (id: number) => request<{ status: string }>(`/api/screenings/${id}/retry`, { method: "POST" }),
+  submitFeedback: (
+    id: number,
+    payload: { note?: string; override?: "shortlisted" | "manual_review" | "rejected"; clear_override?: boolean }
+  ) =>
+    request<ScreeningDetail>(`/api/screenings/${id}/feedback`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getLeaderboard: (params: { campaign_id?: number; page?: number; page_size?: number }) => {
+    const qs = new URLSearchParams();
+    if (params.campaign_id) qs.set("campaign_id", String(params.campaign_id));
+    qs.set("page", String(params.page ?? 1));
+    qs.set("page_size", String(params.page_size ?? 25));
+    return request<Page<LeaderboardItem>>(`/api/leaderboard?${qs}`);
+  },
 };

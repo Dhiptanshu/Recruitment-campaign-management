@@ -12,7 +12,19 @@ backend/uvicorn.log
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
-frontend/.claude/
+
+# Claude Code / tooling config (e.g. preview launch.json)
+.claude/
+**/.claude/
+
+# Environment secrets - .env.example files ARE committed, real .env files are not
+.env
+.env.local
+backend/.env
+frontend/.env
+
+# Test data
+test_csv/
 
 # OS
 .DS_Store

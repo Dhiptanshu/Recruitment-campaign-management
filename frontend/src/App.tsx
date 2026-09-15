@@ -1,8 +1,9 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Route, Routes } from "react-router-dom";
 import { CandidatesPage } from "./pages/CandidatesPage";
 import { CampaignsPage } from "./pages/CampaignsPage";
 import { CampaignDetailPage } from "./pages/CampaignDetailPage";
 import { ScreeningDetailPage } from "./pages/ScreeningDetailPage";
+import { LeaderboardPage } from "./pages/LeaderboardPage";
 
 function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
   return (
@@ -24,13 +25,14 @@ export default function App() {
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2">
+          <Link to="/" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">GV</div>
             <span className="font-semibold text-slate-900">GlobalVox AI Screening</span>
-          </div>
+          </Link>
           <nav className="flex gap-1">
             <NavItem to="/campaigns">Campaigns</NavItem>
             <NavItem to="/candidates">Candidates</NavItem>
+            <NavItem to="/leaderboard">Leaderboard</NavItem>
           </nav>
         </div>
       </header>
@@ -40,6 +42,7 @@ export default function App() {
           <Route path="/campaigns" element={<CampaignsPage />} />
           <Route path="/campaigns/:id" element={<CampaignDetailPage />} />
           <Route path="/candidates" element={<CandidatesPage />} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/screenings/:id" element={<ScreeningDetailPage />} />
         </Routes>
       </main>

@@ -39,7 +39,7 @@ export function CandidatesPage() {
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Candidates</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Import your candidate list (CSV with <code className="rounded bg-slate-100 px-1">name, phone</code> required;
+          Import your candidate list (CSV or Excel, with <code className="rounded bg-slate-100 px-1">name, phone</code> required;
           <code className="rounded bg-slate-100 px-1">id, email, current_company</code> optional). Invalid rows are
           skipped and reported, valid rows are kept even if a file has some bad data.
         </p>
@@ -48,13 +48,13 @@ export function CandidatesPage() {
       <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6">
         <label className="flex cursor-pointer flex-col items-center gap-2 text-center">
           <span className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">
-            {importing ? "Importing…" : "Upload candidates CSV"}
+            {importing ? "Importing…" : "Upload candidates (.csv or .xlsx)"}
           </span>
           <span className="text-xs text-slate-400">Supports large files — rows are validated and imported in batches</span>
           <input
             ref={fileRef}
             type="file"
-            accept=".csv"
+            accept=".csv,.xlsx,.xlsm"
             className="hidden"
             disabled={importing}
             onChange={(e) => e.target.files?.[0] && onImport(e.target.files[0])}

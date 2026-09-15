@@ -48,9 +48,14 @@ CSV upload → validate & upsert Candidate pool (batched, dedup by phone)
 - **AI-generated candidate score (0–100)** — [`backend/app/services/scoring.py`](backend/app/services/scoring.py) combines experience fit, AI/ML skill coverage, recruiter-signal quality, and compensation feasibility.
 - **Automatic shortlist generation** — recommendation bucket is derived automatically from the score plus hard filters (missing core skills, wildly out-of-range experience).
 - **AI-generated candidate summary** — one-paragraph recruiter-facing synthesis per candidate.
-- **Candidate ranking** — campaign table sorts by AI score by default.
-- **CSV export** of campaign results.
+- **Skill matching against job description** — [`backend/app/services/jd_matching.py`](backend/app/services/jd_matching.py) keyword-matches the campaign's JD text against captured skills at call time; shown as a % + matched/missing chips on the candidate page and as a sortable/filterable column in the campaign table and leaderboard. Deliberately deterministic (not an LLM call) for the same reason the rest of the "AI" in this prototype is simulated — fast, free, and easy to reason about; null (not 0%) when the JD has no recognizable tech keywords, since that's "not applicable" rather than "no match."
+- **Candidate ranking leaderboard** — a dedicated `/leaderboard` page ranks completed screenings by AI score across all campaigns (or filtered to one), independent of the per-campaign table's default score sort.
+- **Recruiter feedback workflow** — a recruiter can add a note and/or override the AI's recommendation on any completed screening (`POST /api/screenings/{id}/feedback`). The override always wins over the AI recommendation wherever a bucket is shown or counted — dashboard stats, filters, the leaderboard, and CSV export all reflect `recruiter_override ?? recommendation`, with the AI's original call kept alongside for transparency (see the ✎ marker in the campaign table).
+- **Interview scheduling suggestion** — [`backend/app/services/scheduling.py`](backend/app/services/scheduling.py) turns a shortlisted candidate's notice period (and score) into a "schedule within N days" nudge, shown on the candidate page. A heuristic, not a real calendar integration — there's no interviewer availability to schedule against here.
+- **CSV export** of campaign results (includes AI recommendation, recruiter override, effective recommendation, JD match %, and notes).
 - **Manual retry** — a recruiter can re-trigger a single candidate's call from the candidate detail page.
+
+Not implemented: resume upload/parsing — the simulated call already produces equivalent structured data, so a second, heavier input path (file upload + PDF/doc text extraction) added the least value per unit of time among the eight optional items.
 
 ## Running locally
 
@@ -77,14 +82,16 @@ App: http://localhost:5173 (expects the backend on port 8000; CORS is pre-config
 
 ## Using it
 
-1. **Candidates** tab → upload a CSV (`name`, `phone` required; `id`, `email`, `current_company` optional). Invalid rows are skipped and reported individually; valid rows import regardless.
-2. **Campaigns** tab → "+ New Campaign", fill in position/department/location/experience range.
-3. On the campaign page: either **"Add all candidates from pool"** or **"Import CSV"** to bring in a campaign-specific list (this also adds new candidates to the global pool).
+1. **Candidates** tab → upload a **CSV or Excel (.xlsx/.xlsm)** file (`name`, `phone` required; `id`, `email`, `current_company` optional). Invalid rows are skipped and reported individually; valid rows import regardless.
+2. **Campaigns** tab → "+ New Campaign", fill in position/department/location/experience range, and optionally paste a **job description** — that's what powers the JD-match %. Every field can be changed later via **Edit** on the campaign page (a JD edit only affects candidates called after the save, not ones already scored).
+3. On the campaign page: either **"Add all candidates from pool"** or **"Import CSV/XLSX"** to bring in a campaign-specific list (this also adds new candidates to the global pool).
 4. **Start Campaign** — processes all not-yet-contacted candidates through the simulated calling service, ~10 at a time. The dashboard and candidate table auto-refresh every 2s while running.
-5. Filter by Shortlisted / Manual Review / Rejected / Pending / Failed, search, sort by AI score, click into any candidate for the full screening transcript-equivalent (compensation, skills, projects, recruiter signals), export the whole campaign to CSV, or retry an individual failed/no-answer call.
+5. Filter by Shortlisted / Manual Review / Rejected / Pending / Failed, search, sort by AI score or JD match, click into any candidate for the full screening transcript-equivalent (compensation, skills, projects, recruiter signals, JD match breakdown, an interview-timing suggestion if shortlisted), leave a recruiter note or override the AI's call, export the whole campaign to **CSV or XLSX**, or retry an individual failed/no-answer call.
+6. **Leaderboard** tab → top candidates by AI score across every campaign (or one, via the filter), for a cross-campaign "best talent first" view.
 
 ## Known limitations (given the assessment's time box)
 
 - SQLite is fine for a prototype at the scales exercised (tested up to 1,000 candidates end-to-end); a production deployment at 100,000+ candidates would swap in Postgres and a real task queue (e.g. Celery/RQ) instead of an in-process thread pool, but the code is structured so that swap doesn't touch the API or scoring logic.
-- No authentication — single-recruiter local prototype.
-- Resume upload/parsing and interview-scheduling recommendations (optional bonus items) were not implemented in the interest of the other bonus features above and time available.
+- No authentication — single-recruiter local prototype; the recruiter feedback workflow has no login, so "who reviewed it" isn't tracked, only "when" (`reviewed_at`).
+- Resume upload/parsing (the one remaining optional bonus item) was not implemented — see the note above.
+- The dev SQLite file has no migration tooling (no Alembic); schema changes mean deleting `backend/globalvox.db` and re-importing, which is fine for a prototype but wouldn't fly in production.

@@ -9,6 +9,7 @@ from ..models import Candidate
 PHONE_RE = re.compile(r"^\+?[0-9]{7,15}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 REQUIRED_COLUMNS = {"name", "phone"}
+SUPPORTED_EXTENSIONS = {"csv", "xlsx", "xlsm"}
 BATCH_SIZE = 500
 
 
@@ -35,7 +36,7 @@ class ImportSummary:
 def _clean(value):
     if value is None:
         return None
-    v = value.strip()
+    v = str(value).strip()
     return v if v else None
 
 
@@ -68,9 +69,20 @@ def validate_row(row: dict) -> tuple[dict | None, str | None]:
     }, None
 
 
-def import_candidates_csv(db: Session, file_bytes: bytes) -> ImportSummary:
-    summary = ImportSummary()
+def _cell_to_str(value):
+    """openpyxl hands back native ints/floats for numeric-looking cells
+    (e.g. a phone column Excel decided was a number) -- normalize those
+    back to plain digit strings instead of '919876543210.0'."""
+    if value is None:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
 
+
+def _iter_csv_rows(file_bytes: bytes):
+    """Returns (header_set, row_iterator) or (None, None) if the file is empty.
+    Each yielded item is (row_number, {lowercased_column: raw_value})."""
     try:
         text = file_bytes.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -78,10 +90,62 @@ def import_candidates_csv(db: Session, file_bytes: bytes) -> ImportSummary:
 
     reader = csv.DictReader(io.StringIO(text))
     if reader.fieldnames is None:
+        return None, None
+
+    header = {h.strip().lower() for h in reader.fieldnames if h}
+
+    def gen():
+        for i, raw_row in enumerate(reader, start=2):  # header is row 1
+            yield i, {(k or "").strip().lower(): v for k, v in raw_row.items()}
+
+    return header, gen()
+
+
+def _iter_xlsx_rows(file_bytes: bytes):
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    ws = wb.active
+    rows_iter = ws.iter_rows(values_only=True)
+
+    try:
+        header_row = next(rows_iter)
+    except StopIteration:
+        return None, None
+
+    headers = [(_cell_to_str(h) or "").lower() for h in header_row]
+    header = {h for h in headers if h}
+
+    def gen():
+        for i, raw_row in enumerate(rows_iter, start=2):
+            if all(v is None for v in raw_row):
+                continue  # skip fully blank rows (common at the end of a sheet)
+            row_dict = {
+                headers[idx]: _cell_to_str(v)
+                for idx, v in enumerate(raw_row)
+                if idx < len(headers) and headers[idx]
+            }
+            yield i, row_dict
+
+    return header, gen()
+
+
+def import_candidates_file(db: Session, filename: str, file_bytes: bytes) -> ImportSummary:
+    summary = ImportSummary()
+
+    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if ext == "csv":
+        header, rows = _iter_csv_rows(file_bytes)
+    elif ext in ("xlsx", "xlsm"):
+        header, rows = _iter_xlsx_rows(file_bytes)
+    else:
+        summary.errors.append({"row": 0, "reason": f"unsupported file type '.{ext}' -- use .csv or .xlsx"})
+        return summary
+
+    if header is None:
         summary.errors.append({"row": 0, "reason": "empty file"})
         return summary
 
-    header = {h.strip().lower() for h in reader.fieldnames if h}
     missing_cols = REQUIRED_COLUMNS - header
     if missing_cols:
         summary.errors.append({
@@ -90,7 +154,6 @@ def import_candidates_csv(db: Session, file_bytes: bytes) -> ImportSummary:
         })
         return summary
 
-    # normalize keys to lowercase for lookups regardless of CSV header casing.
     # keyed by phone so duplicate phones within one flush cycle collapse to
     # the last occurrence instead of violating the unique constraint.
     batch: dict[str, dict] = {}
@@ -121,9 +184,8 @@ def import_candidates_csv(db: Session, file_bytes: bytes) -> ImportSummary:
         db.commit()
         batch = {}
 
-    for i, raw_row in enumerate(reader, start=2):  # header is row 1
+    for i, normalized_row in rows:
         summary.total_rows += 1
-        normalized_row = {(k or "").strip().lower(): v for k, v in raw_row.items()}
         record, error = validate_row(normalized_row)
         if error:
             summary.skipped += 1

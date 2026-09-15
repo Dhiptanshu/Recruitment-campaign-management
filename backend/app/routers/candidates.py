@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Candidate
 from ..schemas import CandidateOut, ImportSummaryOut, PageOut
-from ..services.csv_import import import_candidates_csv
+from ..services.csv_import import import_candidates_file, SUPPORTED_EXTENSIONS
 
 router = APIRouter(prefix="/api/candidates", tags=["candidates"])
 
@@ -14,14 +14,15 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 @router.post("/import", response_model=ImportSummaryOut)
 async def import_candidates(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not file.filename.lower().endswith(".csv"):
-        raise HTTPException(400, "Please upload a .csv file")
+    ext = file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(400, "Please upload a .csv or .xlsx file")
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(400, "File too large (max 50 MB)")
     if len(content) == 0:
         raise HTTPException(400, "File is empty")
-    summary = import_candidates_csv(db, content)
+    summary = import_candidates_file(db, file.filename, content)
     return summary.to_dict()
 
 
