@@ -23,9 +23,6 @@ frontend/.vite/
 backend/.env
 frontend/.env
 
-# Test data
-test_csv/
-
 # OS
 .DS_Store
 Thumbs.db
