@@ -1,7 +1,10 @@
 import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+MAX_EXPERIENCE_YEARS = 60
+MAX_RETRY_ATTEMPTS = 5
 
 
 class CandidateOut(BaseModel):
@@ -24,24 +27,53 @@ class ImportSummaryOut(BaseModel):
 
 
 class CampaignCreate(BaseModel):
-    name: str
-    position: str
-    department: Optional[str] = None
-    location: Optional[str] = None
-    experience_min: int = 0
-    experience_max: int = 10
-    job_description: Optional[str] = None
+    name: str = Field(min_length=1, max_length=300)
+    position: str = Field(min_length=1, max_length=200)
+    department: Optional[str] = Field(None, max_length=200)
+    location: Optional[str] = Field(None, max_length=200)
+    experience_min: int = Field(0, ge=0, le=MAX_EXPERIENCE_YEARS)
+    experience_max: int = Field(10, ge=0, le=MAX_EXPERIENCE_YEARS)
+    job_description: Optional[str] = Field(None, max_length=10_000)
+    max_attempts: int = Field(2, ge=1, le=MAX_RETRY_ATTEMPTS)
     candidate_ids: Optional[list[int]] = None  # if omitted, all candidates are added
+
+    @field_validator("name", "position")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("cannot be blank")
+        return v
+
+    @model_validator(mode="after")
+    def _experience_range(self):
+        if self.experience_min > self.experience_max:
+            raise ValueError("experience_min cannot exceed experience_max")
+        return self
 
 
 class CampaignUpdate(BaseModel):
-    name: Optional[str] = None
-    position: Optional[str] = None
-    department: Optional[str] = None
-    location: Optional[str] = None
-    experience_min: Optional[int] = None
-    experience_max: Optional[int] = None
-    job_description: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=300)
+    position: Optional[str] = Field(None, min_length=1, max_length=200)
+    department: Optional[str] = Field(None, max_length=200)
+    location: Optional[str] = Field(None, max_length=200)
+    experience_min: Optional[int] = Field(None, ge=0, le=MAX_EXPERIENCE_YEARS)
+    experience_max: Optional[int] = Field(None, ge=0, le=MAX_EXPERIENCE_YEARS)
+    job_description: Optional[str] = Field(None, max_length=10_000)
+    max_attempts: Optional[int] = Field(None, ge=1, le=MAX_RETRY_ATTEMPTS)
+
+    @field_validator("name", "position")
+    @classmethod
+    def _not_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("cannot be blank")
+        return v
+    # cross-field experience_min <= experience_max is enforced in the router,
+    # since this is a partial update and either field may be absent here --
+    # the router has the campaign's current values to fill the gap.
 
 
 class CampaignOut(BaseModel):
@@ -54,6 +86,7 @@ class CampaignOut(BaseModel):
     experience_min: int
     experience_max: int
     job_description: Optional[str] = None
+    max_attempts: int
     status: str
     total_candidates: int
     created_at: datetime.datetime
@@ -92,6 +125,11 @@ class ScreeningListItemOut(BaseModel):
     last_attempt_at: Optional[datetime.datetime] = None
 
 
+class TranscriptTurn(BaseModel):
+    speaker: str
+    text: str
+
+
 class ScreeningDetailOut(BaseModel):
     id: int
     campaign_id: int
@@ -101,8 +139,10 @@ class ScreeningDetailOut(BaseModel):
     outcome_detail: Optional[str] = None
     recommendation: Optional[str] = None
     ai_score: Optional[int] = None
+    ai_source: Optional[str] = None  # "llm" | "heuristic"
     summary: Optional[str] = None
     extracted_data: Optional[dict] = None
+    transcript: Optional[list[TranscriptTurn]] = None
     error_message: Optional[str] = None
     call_duration_seconds: Optional[int] = None
     attempt_count: int
@@ -119,7 +159,7 @@ class ScreeningDetailOut(BaseModel):
 
 
 class RecruiterFeedbackIn(BaseModel):
-    note: Optional[str] = None
+    note: Optional[str] = Field(None, max_length=4000)
     override: Optional[str] = None  # shortlisted | manual_review | rejected
     clear_override: bool = False
 

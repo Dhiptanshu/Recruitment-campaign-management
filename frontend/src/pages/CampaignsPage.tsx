@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../api";
+import { api, MAX_EXPERIENCE_YEARS, MAX_RETRY_ATTEMPTS } from "../api";
 import type { Campaign } from "../api";
 import { ProgressBar } from "../components/ProgressBar";
 
@@ -17,6 +17,7 @@ export function CampaignsPage() {
     experience_min: 0,
     experience_max: 8,
     job_description: "",
+    max_attempts: 2,
   });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,12 +32,24 @@ export function CampaignsPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!form.name || !form.position) {
+    if (!form.name.trim() || !form.position.trim()) {
       setError("Campaign name and position are required");
+      return;
+    }
+    if (form.experience_min < 0 || form.experience_max < 0) {
+      setError("Experience cannot be negative");
+      return;
+    }
+    if (form.experience_min > MAX_EXPERIENCE_YEARS || form.experience_max > MAX_EXPERIENCE_YEARS) {
+      setError(`Experience cannot exceed ${MAX_EXPERIENCE_YEARS} years`);
       return;
     }
     if (form.experience_min > form.experience_max) {
       setError("Minimum experience cannot exceed maximum");
+      return;
+    }
+    if (form.max_attempts < 1 || form.max_attempts > MAX_RETRY_ATTEMPTS) {
+      setError(`Retry attempts must be between 1 and ${MAX_RETRY_ATTEMPTS}`);
       return;
     }
     setCreating(true);
@@ -109,6 +122,7 @@ export function CampaignsPage() {
               <input
                 type="number"
                 min={0}
+                max={MAX_EXPERIENCE_YEARS}
                 className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                 value={form.experience_min}
                 onChange={(e) => setForm({ ...form, experience_min: Number(e.target.value) })}
@@ -119,11 +133,24 @@ export function CampaignsPage() {
               <input
                 type="number"
                 min={0}
+                max={MAX_EXPERIENCE_YEARS}
                 className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                 value={form.experience_max}
                 onChange={(e) => setForm({ ...form, experience_max: Number(e.target.value) })}
               />
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500">Retry attempts per candidate</label>
+            <input
+              type="number"
+              min={1}
+              max={MAX_RETRY_ATTEMPTS}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              value={form.max_attempts}
+              onChange={(e) => setForm({ ...form, max_attempts: Number(e.target.value) })}
+            />
+            <p className="mt-1 text-xs text-slate-400">How many times to retry a candidate on no-answer/voicemail/technical error (1–{MAX_RETRY_ATTEMPTS}).</p>
           </div>
           <div className="sm:col-span-2">
             <label className="text-xs font-medium text-slate-500">Job Description (optional)</label>

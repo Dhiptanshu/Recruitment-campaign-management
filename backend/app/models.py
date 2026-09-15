@@ -39,6 +39,9 @@ class Campaign(Base):
     job_description: Mapped[str] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft, running, paused, completed
     total_candidates: Mapped[int] = mapped_column(Integer, default=0)
+    # how many times the simulated calling service retries a candidate
+    # before giving up; recruiter-configurable per campaign at create/edit time
+    max_attempts: Mapped[int] = mapped_column(Integer, default=2)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
@@ -68,8 +71,10 @@ class Screening(Base):
 
     recommendation: Mapped[str] = mapped_column(String(20), nullable=True, index=True)  # shortlisted/manual_review/rejected
     ai_score: Mapped[int] = mapped_column(Integer, nullable=True)
+    ai_source: Mapped[str] = mapped_column(String(20), nullable=True)  # "llm" | "heuristic" -- which one actually produced score/summary
     summary: Mapped[str] = mapped_column(Text, nullable=True)
     extracted_data: Mapped[dict] = mapped_column(JSON, nullable=True)
+    transcript: Mapped[list] = mapped_column(JSON, nullable=True)  # [{speaker, text}, ...] for the most recent attempt
     error_message: Mapped[str] = mapped_column(Text, nullable=True)
     call_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=True)
 

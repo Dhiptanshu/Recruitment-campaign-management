@@ -16,6 +16,10 @@ services:
           property: connectionString
       - key: ALLOWED_ORIGINS
         sync: false # set manually in the Render dashboard once you have the Vercel URL
+      - key: LLM_API_KEY
+        sync: false # optional: your aicredits.in API key -- unset means the deterministic fallback scorer is always used
+      - key: LLM_MODEL
+        sync: false # optional: model name available on your aicredits.in account (defaults to "gpt-4o-mini" if unset)
 
 databases:
   - name: globalvox-db

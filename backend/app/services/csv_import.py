@@ -44,28 +44,51 @@ def _normalize_phone(phone: str) -> str:
     return re.sub(r"[^0-9+]", "", phone)
 
 
+# must match (or be tighter than) the column widths in models.py -- Postgres
+# enforces VARCHAR(n) strictly (unlike SQLite, which silently accepts
+# anything), so without this check a too-long field imports fine in local
+# dev and then 500s in production.
+MAX_NAME_LEN = 200
+MAX_PHONE_LEN = 32
+MAX_EMAIL_LEN = 200
+MAX_COMPANY_LEN = 200
+MAX_EXTERNAL_REF_LEN = 100
+
+
 def validate_row(row: dict) -> tuple[dict | None, str | None]:
     name = _clean(row.get("name"))
     phone_raw = _clean(row.get("phone"))
     email = _clean(row.get("email"))
     company = _clean(row.get("current_company"))
+    external_ref = _clean(row.get("id"))
 
     if not name:
         return None, "missing name"
+    if len(name) > MAX_NAME_LEN:
+        return None, f"name too long (max {MAX_NAME_LEN} characters)"
     if not phone_raw:
         return None, "missing phone"
     phone = _normalize_phone(phone_raw)
     if not PHONE_RE.match(phone):
         return None, f"invalid phone '{phone_raw}'"
-    if email and not EMAIL_RE.match(email):
-        return None, f"invalid email '{email}'"
+    if len(phone) > MAX_PHONE_LEN:
+        return None, f"phone too long (max {MAX_PHONE_LEN} characters)"
+    if email:
+        if not EMAIL_RE.match(email):
+            return None, f"invalid email '{email}'"
+        if len(email) > MAX_EMAIL_LEN:
+            return None, f"email too long (max {MAX_EMAIL_LEN} characters)"
+    if company and len(company) > MAX_COMPANY_LEN:
+        company = company[:MAX_COMPANY_LEN]
+    if external_ref and len(external_ref) > MAX_EXTERNAL_REF_LEN:
+        external_ref = external_ref[:MAX_EXTERNAL_REF_LEN]
 
     return {
         "name": name,
         "phone": phone,
         "email": email,
         "current_company": company,
-        "external_ref": _clean(row.get("id")),
+        "external_ref": external_ref,
     }, None
 
 

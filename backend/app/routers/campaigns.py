@@ -49,8 +49,8 @@ def _compute_stats(db: Session, campaign_id: int) -> CampaignStats:
 
 @router.post("", response_model=CampaignOut)
 def create_campaign(payload: CampaignCreate, db: Session = Depends(get_db)):
-    if payload.experience_min > payload.experience_max:
-        raise HTTPException(400, "experience_min cannot exceed experience_max")
+    # experience_min <= experience_max and field-length/range bounds are all
+    # enforced by CampaignCreate's own validators (returns 422 automatically)
     campaign = Campaign(
         name=payload.name,
         position=payload.position,
@@ -59,6 +59,7 @@ def create_campaign(payload: CampaignCreate, db: Session = Depends(get_db)):
         experience_min=payload.experience_min,
         experience_max=payload.experience_max,
         job_description=payload.job_description,
+        max_attempts=payload.max_attempts,
     )
     db.add(campaign)
     db.flush()
@@ -81,7 +82,7 @@ def _attach_candidates(db: Session, campaign: Campaign, candidate_ids: list[int]
     for cid in candidate_ids:
         if cid in existing:
             continue
-        db.add(Screening(campaign_id=campaign.id, candidate_id=cid))
+        db.add(Screening(campaign_id=campaign.id, candidate_id=cid, max_attempts=campaign.max_attempts))
         existing.add(cid)
         added += 1
     campaign.total_candidates = (campaign.total_candidates or 0) + added
@@ -123,7 +124,11 @@ async def import_candidates_into_campaign(
     if not content:
         raise HTTPException(400, "File is empty")
 
-    summary = import_candidates_file(db, file.filename, content)
+    try:
+        summary = import_candidates_file(db, file.filename, content)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(400, f"Could not read this file -- is it a valid, non-corrupted {ext}? ({exc})")
     _attach_candidates(db, campaign, summary.touched_candidate_ids)
     db.commit()
     return summary.to_dict()
@@ -184,6 +189,17 @@ def start_campaign(campaign_id: int, background_tasks: BackgroundTasks, db: Sess
     )
     if not total:
         raise HTTPException(400, "Add candidates to this campaign before starting it")
+    remaining = db.scalar(
+        select(func.count()).select_from(Screening)
+        .where(Screening.campaign_id == campaign_id)
+        .where(Screening.call_status.in_(["not_contacted", "in_progress"]))
+    )
+    if not remaining:
+        raise HTTPException(
+            400,
+            "No candidates left to contact -- everyone has a completed or failed outcome. "
+            "Use \"Retry All Failed\" to give failed calls another attempt, or add more candidates.",
+        )
     start_campaign_async(campaign_id)
     return {"status": "started"}
 
@@ -193,8 +209,29 @@ def cancel_campaign(campaign_id: int, db: Session = Depends(get_db)):
     campaign = db.get(Campaign, campaign_id)
     if not campaign:
         raise HTTPException(404, "Campaign not found")
+    if campaign.status != "running":
+        raise HTTPException(409, f"Campaign is not running (current status: {campaign.status})")
     request_cancel(campaign_id)
     return {"status": "cancel_requested"}
+
+
+@router.post("/{campaign_id}/retry_failed")
+def retry_failed_screenings(campaign_id: int, db: Session = Depends(get_db)):
+    campaign = db.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(404, "Campaign not found")
+    if campaign.status == "running":
+        raise HTTPException(409, "Campaign is currently running -- wait for it to finish or pause it first")
+
+    failed = db.execute(
+        select(Screening).where(Screening.campaign_id == campaign_id).where(Screening.call_status == "failed")
+    ).scalars().all()
+    for s in failed:
+        s.call_status = "not_contacted"
+        s.attempt_count = 0
+        s.error_message = None
+    db.commit()
+    return {"reset": len(failed)}
 
 
 @router.get("/{campaign_id}/screenings", response_model=PageOut)

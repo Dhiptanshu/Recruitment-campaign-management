@@ -44,6 +44,7 @@ class CallResult:
     outcome: str  # success | no_answer | voicemail
     duration_seconds: int
     data: dict = field(default_factory=dict)
+    transcript: list = field(default_factory=list)  # [{"speaker": "agent"|"candidate", "text": str}, ...]
 
 
 def _weighted_choice(weights):
@@ -106,6 +107,65 @@ def _simulate_extracted_data(campaign: dict) -> dict:
     }
 
 
+def _turn(speaker: str, text: str) -> dict:
+    return {"speaker": speaker, "text": text}
+
+
+def _build_voicemail_transcript(candidate: dict, campaign: dict) -> list:
+    return [
+        _turn("agent", (
+            f"Hi {candidate['name']}, this is the GlobalVox recruitment assistant calling about the "
+            f"{campaign.get('position', 'open')} role. Sorry I missed you -- please call back or reply "
+            f"to the follow-up email whenever's convenient. Thanks, bye for now."
+        )),
+    ]
+
+
+def _build_success_transcript(candidate: dict, campaign: dict, data: dict) -> list:
+    position = campaign.get("position", "the role")
+    t = [
+        _turn("agent", f"Hi, am I speaking with {candidate['name']}?"),
+        _turn("candidate", "Yes, speaking."),
+        _turn("agent", (
+            f"Great, thanks for taking the call. I'm the AI screening assistant for GlobalVox, "
+            f"calling about the {position} position. Do you have a few minutes for some quick questions?"
+        )),
+        _turn("candidate", "Sure, go ahead."),
+        _turn("agent", "Could you tell me your current designation and total years of experience?"),
+        _turn("candidate", (
+            f"I'm currently a {data.get('current_designation', 'engineer')} with about "
+            f"{data.get('total_experience_years', 'a few')} years of experience overall."
+        )),
+        _turn("agent", "And how much of that has been specifically in AI or ML work?"),
+        _turn("candidate", f"Roughly {data.get('relevant_ai_experience_years', 'some')} years focused on AI/ML."),
+        _turn("agent", "What's your primary programming language, and have you worked with LLMs, RAG systems, or AI agents?"),
+        _turn("candidate", (
+            f"Mainly {data.get('primary_language', 'Python')}. "
+            + ", ".join(k.replace("_", " ") for k, v in (data.get("skills") or {}).items() if v)
+            + "." if any((data.get("skills") or {}).values()) else "Not much hands-on AI/ML tooling experience yet."
+        )),
+        _turn("agent", "Could you briefly describe a project you've built or worked on?"),
+        _turn("candidate", (
+            f"One example is {data['projects'][0]}." if data.get("projects")
+            else "Nothing I'd call a standout AI project so far."
+        )),
+        _turn("agent", "What's your current and expected CTC, and is it negotiable?"),
+        _turn("candidate", (
+            f"Current is about {data.get('current_ctc_lpa', 'n/a')} LPA, looking for around "
+            f"{data.get('expected_ctc_lpa', 'n/a')} LPA. "
+            + ("It's negotiable." if data.get("salary_negotiable") else "That figure is fairly firm.")
+        )),
+        _turn("agent", "Last question -- what's your current notice period?"),
+        _turn("candidate", f"About {data.get('notice_period_days', 'n/a')} days."),
+        _turn("agent", (
+            "Perfect, that's everything I need for now. Thanks for your time -- our recruitment team will "
+            "review this and reach out about next steps if it's a good fit. Have a great day!"
+        )),
+        _turn("candidate", "Thanks, bye."),
+    ]
+    return t
+
+
 def place_call(candidate: dict, campaign: dict) -> CallResult:
     """
     Simulate one outbound AI screening call.
@@ -128,10 +188,16 @@ def place_call(candidate: dict, campaign: dict) -> CallResult:
         ]))
 
     if outcome == "no_answer":
-        return CallResult(outcome="no_answer", duration_seconds=0)
+        return CallResult(
+            outcome="no_answer", duration_seconds=0,
+            transcript=[_turn("system", "No answer after 6 rings. Call not connected.")],
+        )
 
     if outcome == "voicemail":
-        return CallResult(outcome="voicemail", duration_seconds=random.randint(8, 25))
+        return CallResult(
+            outcome="voicemail", duration_seconds=random.randint(8, 25),
+            transcript=_build_voicemail_transcript(candidate, campaign),
+        )
 
     data = _simulate_extracted_data(campaign)
     # occasionally the provider returns a partial extraction (imperfect
@@ -141,4 +207,5 @@ def place_call(candidate: dict, campaign: dict) -> CallResult:
             data[key] = None
 
     duration = random.randint(90, 480)
-    return CallResult(outcome="success", duration_seconds=duration, data=data)
+    transcript = _build_success_transcript(candidate, campaign, data)
+    return CallResult(outcome="success", duration_seconds=duration, data=data, transcript=transcript)

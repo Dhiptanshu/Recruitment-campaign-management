@@ -22,7 +22,11 @@ async def import_candidates(file: UploadFile = File(...), db: Session = Depends(
         raise HTTPException(400, "File too large (max 50 MB)")
     if len(content) == 0:
         raise HTTPException(400, "File is empty")
-    summary = import_candidates_file(db, file.filename, content)
+    try:
+        summary = import_candidates_file(db, file.filename, content)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(400, f"Could not read this file -- is it a valid, non-corrupted .{ext}? ({exc})")
     return summary.to_dict()
 
 

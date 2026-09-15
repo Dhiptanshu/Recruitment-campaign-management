@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api } from "../api";
+import { api, MAX_EXPERIENCE_YEARS, MAX_RETRY_ATTEMPTS } from "../api";
 import type { Campaign, ImportSummary, Page, ScreeningListItem } from "../api";
 import { StatCard } from "../components/StatCard";
 import { StatusBadge } from "../components/Badge";
@@ -36,6 +36,7 @@ export function CampaignDetailPage() {
     experience_min: 0,
     experience_max: 8,
     job_description: "",
+    max_attempts: 2,
   });
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -80,9 +81,30 @@ export function CampaignDetailPage() {
 
   const doCancel = async () => {
     setBusy(true);
+    setError(null);
     try {
       await api.cancelCampaign(campaignId);
       await loadCampaign();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doRetryFailed = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.retryAllFailed(campaignId);
+      await loadCampaign();
+      await loadScreenings();
+      if (result.reset > 0) {
+        await api.startCampaign(campaignId);
+        await loadCampaign();
+      }
+    } catch (e: any) {
+      setError(e.message);
     } finally {
       setBusy(false);
     }
@@ -112,14 +134,31 @@ export function CampaignDetailPage() {
       experience_min: campaign.experience_min,
       experience_max: campaign.experience_max,
       job_description: campaign.job_description ?? "",
+      max_attempts: campaign.max_attempts,
     });
     setShowEditForm(true);
   };
 
   const saveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editForm.name.trim() || !editForm.position.trim()) {
+      setError("Campaign name and position are required");
+      return;
+    }
+    if (editForm.experience_min < 0 || editForm.experience_max < 0) {
+      setError("Experience cannot be negative");
+      return;
+    }
+    if (editForm.experience_min > MAX_EXPERIENCE_YEARS || editForm.experience_max > MAX_EXPERIENCE_YEARS) {
+      setError(`Experience cannot exceed ${MAX_EXPERIENCE_YEARS} years`);
+      return;
+    }
     if (editForm.experience_min > editForm.experience_max) {
       setError("Minimum experience cannot exceed maximum");
+      return;
+    }
+    if (editForm.max_attempts < 1 || editForm.max_attempts > MAX_RETRY_ATTEMPTS) {
+      setError(`Retry attempts must be between 1 and ${MAX_RETRY_ATTEMPTS}`);
       return;
     }
     setSavingEdit(true);
@@ -213,6 +252,15 @@ export function CampaignDetailPage() {
                 {campaign.status === "completed" ? "Re-run Remaining" : campaign.status === "paused" ? "Resume Campaign" : "Start Campaign"}
               </button>
             )}
+            {campaign.status !== "running" && s.failed > 0 && (
+              <button
+                onClick={doRetryFailed}
+                disabled={busy}
+                className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+              >
+                Retry All Failed ({s.failed})
+              </button>
+            )}
             <a
               href={api.exportCampaignUrl(campaignId, "csv")}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -269,6 +317,7 @@ export function CampaignDetailPage() {
               <input
                 type="number"
                 min={0}
+                max={MAX_EXPERIENCE_YEARS}
                 className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                 value={editForm.experience_min}
                 onChange={(e) => setEditForm({ ...editForm, experience_min: Number(e.target.value) })}
@@ -279,11 +328,24 @@ export function CampaignDetailPage() {
               <input
                 type="number"
                 min={0}
+                max={MAX_EXPERIENCE_YEARS}
                 className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                 value={editForm.experience_max}
                 onChange={(e) => setEditForm({ ...editForm, experience_max: Number(e.target.value) })}
               />
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500">Retry attempts per candidate</label>
+            <input
+              type="number"
+              min={1}
+              max={MAX_RETRY_ATTEMPTS}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              value={editForm.max_attempts}
+              onChange={(e) => setEditForm({ ...editForm, max_attempts: Number(e.target.value) })}
+            />
+            <p className="mt-1 text-xs text-slate-400">Only applies to candidates added after this save.</p>
           </div>
           <div className="sm:col-span-2">
             <label className="text-xs font-medium text-slate-500">Job Description</label>

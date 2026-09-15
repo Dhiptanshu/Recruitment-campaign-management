@@ -12,7 +12,7 @@ from sqlalchemy import select
 from ..calling_service import CallingServiceError, place_call
 from ..database import SessionLocal
 from ..models import Campaign, Screening
-from .scoring import score_and_recommend
+from .ai_review import generate_ai_review
 from .jd_matching import match_job_description
 
 logger = logging.getLogger("globalvox.campaign_runner")
@@ -71,10 +71,11 @@ def process_one_screening(screening_id: int):
                 last_error = str(exc)
                 screening.outcome_detail = "technical_error"
                 screening.error_message = last_error
+                screening.transcript = []
                 continue
 
             if result.outcome == "success":
-                score, recommendation, summary = score_and_recommend(result.data, campaign)
+                score, recommendation, summary, ai_source = generate_ai_review(result.data, campaign)
                 jd_pct, jd_matched, jd_missing = match_job_description(
                     campaign.job_description, result.data.get("skills")
                 )
@@ -86,8 +87,10 @@ def process_one_screening(screening_id: int):
                 screening.outcome_detail = "success"
                 screening.recommendation = recommendation
                 screening.ai_score = score
+                screening.ai_source = ai_source
                 screening.summary = summary
                 screening.extracted_data = data
+                screening.transcript = result.transcript
                 screening.jd_match_pct = jd_pct
                 screening.call_duration_seconds = result.duration_seconds
                 screening.error_message = None
@@ -97,6 +100,7 @@ def process_one_screening(screening_id: int):
             # no_answer / voicemail: worth one retry, otherwise terminal-failed
             screening.outcome_detail = result.outcome
             screening.call_duration_seconds = result.duration_seconds
+            screening.transcript = result.transcript
 
         # exhausted attempts without a completed conversation
         screening.call_status = "failed"
@@ -175,3 +179,46 @@ def start_campaign_async(campaign_id: int):
     thread = threading.Thread(target=run_campaign, args=(campaign_id,), daemon=True)
     thread.start()
     return thread
+
+
+def reconcile_stale_state():
+    """Called once at process startup. If the process crashed or was
+    restarted mid-campaign, any screening left mid-call and any campaign
+    left marked "running" are orphaned -- no worker thread is actually
+    processing them anymore, but nothing in the data says so. Without this,
+    the UI would show a campaign stuck at "running" forever with no way to
+    resume it (Start is hidden while status == running, and cancel just sets
+    a flag nothing reads after a restart).
+
+    Recovery: any "in_progress" screening reverts to "not_contacted" (its
+    partial attempt didn't count -- attempt_count is only incremented right
+    before a call is placed, so nothing is lost), and any "running" campaign
+    drops to "paused" so the recruiter can hit "Resume Campaign" and pick up
+    the freshly-reset screenings.
+    """
+    db = SessionLocal()
+    try:
+        stale_screenings = db.execute(
+            select(Screening).where(Screening.call_status == "in_progress")
+        ).scalars().all()
+        for s in stale_screenings:
+            s.call_status = "not_contacted"
+
+        stale_campaigns = db.execute(
+            select(Campaign).where(Campaign.status == "running")
+        ).scalars().all()
+        for c in stale_campaigns:
+            c.status = "paused"
+
+        if stale_screenings or stale_campaigns:
+            db.commit()
+            logger.warning(
+                "Reconciled stale state on startup: %d screening(s) reset to not_contacted, "
+                "%d campaign(s) demoted from running to paused",
+                len(stale_screenings), len(stale_campaigns),
+            )
+    except Exception:
+        logger.exception("Failed to reconcile stale state on startup")
+        db.rollback()
+    finally:
+        db.close()

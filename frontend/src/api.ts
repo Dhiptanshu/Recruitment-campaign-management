@@ -56,6 +56,7 @@ export interface Campaign {
   experience_min: number;
   experience_max: number;
   job_description: string | null;
+  max_attempts: number;
   status: "draft" | "running" | "paused" | "completed";
   total_candidates: number;
   created_at: string;
@@ -63,6 +64,9 @@ export interface Campaign {
   completed_at: string | null;
   stats: CampaignStats;
 }
+
+export const MAX_EXPERIENCE_YEARS = 60;
+export const MAX_RETRY_ATTEMPTS = 5;
 
 export interface ScreeningListItem {
   id: number;
@@ -86,6 +90,11 @@ export interface InterviewSuggestion {
   reason: string;
 }
 
+export interface TranscriptTurn {
+  speaker: string;
+  text: string;
+}
+
 export interface ScreeningDetail {
   id: number;
   campaign_id: number;
@@ -95,8 +104,10 @@ export interface ScreeningDetail {
   outcome_detail: string | null;
   recommendation: string | null;
   ai_score: number | null;
+  ai_source: "llm" | "heuristic" | null;
   summary: string | null;
   extracted_data: Record<string, any> | null;
+  transcript: TranscriptTurn[] | null;
   error_message: string | null;
   call_duration_seconds: number | null;
   attempt_count: number;
@@ -154,6 +165,7 @@ export const api = {
     experience_min: number;
     experience_max: number;
     job_description?: string;
+    max_attempts?: number;
   }) =>
     request<Campaign>("/api/campaigns", {
       method: "POST",
@@ -169,6 +181,7 @@ export const api = {
       experience_min: number;
       experience_max: number;
       job_description: string;
+      max_attempts: number;
     }>
   ) =>
     request<Campaign>(`/api/campaigns/${id}`, {
@@ -189,6 +202,8 @@ export const api = {
     request<{ status: string }>(`/api/campaigns/${campaignId}/start`, { method: "POST" }),
   cancelCampaign: (campaignId: number) =>
     request<{ status: string }>(`/api/campaigns/${campaignId}/cancel`, { method: "POST" }),
+  retryAllFailed: (campaignId: number) =>
+    request<{ reset: number }>(`/api/campaigns/${campaignId}/retry_failed`, { method: "POST" }),
   listScreenings: (
     campaignId: number,
     params: { status?: string; recommendation?: string; search?: string; sort?: string; page?: number; page_size?: number }
